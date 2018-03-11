@@ -425,7 +425,7 @@ mode_gen_sign(const ProgramArgs *args, int argc, char *const *argv)
 
     char *sigfile_malloced = NULL;
     const char *sigfile = args->sigfile;
-    if (!args->sigfile)
+    if (!sigfile)
         sigfile = sigfile_malloced = malloc_strcat(file, SIG_FILE_EXT);
 
     PublicKey pk;
@@ -503,7 +503,7 @@ mode_verify(const ProgramArgs *args, int argc, char *const *argv)
 
     char *sigfile_malloced = NULL;
     const char *sigfile = args->sigfile;
-    if (!args->sigfile)
+    if (!sigfile)
         sigfile = sigfile_malloced = malloc_strcat(file, SIG_FILE_EXT);
 
     PublicKey pk;
@@ -514,7 +514,7 @@ mode_verify(const ProgramArgs *args, int argc, char *const *argv)
         goto err;
     }
     Signature sig;
-    ret = ret == 0 ? read_file(args->sigfile, sig.data, sizeof sig.data) : ret;
+    ret = ret == 0 ? read_file(sigfile, sig.data, sizeof sig.data) : ret;
     if (ret != 0) {
         error_message = "Reading signature failed";
         goto err;
