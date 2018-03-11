@@ -1,3 +1,5 @@
+#undef NDEBUG
+
 #include <sodium.h>
 
 #include <assert.h>
@@ -37,11 +39,20 @@ static const char *USAGE_STR =
   "    Generate the keypair on the fly using a passphrase and sign FILE.\n"
   "    If argument SIG is not set, save to FILE" SIG_FILE_EXT ".\n"
   "\n"
-  "  verify -p PUB [-d SIG] [-i SUBKEYID] [FILE]\n"
+  "  sign -s SEC [-d SIG] [FILE]\n"
+  "    Sign FILE and save signature to SIG.\n"
+  "    If argument SIG is not set, save to FILE" SIG_FILE_EXT ".\n"
+  "    If argument FILE is not set, read data from stdin, in which case\n"
+  "    argument SIG has to be given.\n"
+  "\n"
+  "  verify -p PUB [-d SIG] [FILE]\n"
   "    Verify a signature.\n"
   "    If argument SIG is not, use FILE" SIG_FILE_EXT "\n"
   "    If argument FILE is not set, read data from stdin, in which case\n"
-  "    argument SIG has to be given.\n";
+  "    argument SIG has to be given.\n"
+  "\n"
+  "  regen-pub -s SEC -p PUB\n"
+  "    Recreate the pulickey PUB from secret key SEC\n";
 
 typedef struct
 {
@@ -62,6 +73,7 @@ typedef enum {
     MODE_INVALID = 0,
     MODE_GEN,
     MODE_GEN_AND_SIGN,
+    MODE_SIGN,
     MODE_VERIFY,
     MODE_REGEN_PUB
 } ProgramMode;
@@ -360,21 +372,82 @@ check_file_ext(const char *argname, const char *file, const char *ext)
 }
 
 static int
+check_file_exts(const ProgramArgs *args)
+{
+    if (check_file_ext("PUB", args->pkfile, PUB_FILE_EXT) != 0)
+        return 1;
+    if (check_file_ext("SEC", args->skfile, SEC_FILE_EXT) != 0)
+        return 1;
+    if (check_file_ext("SIG", args->sigfile, SIG_FILE_EXT) != 0)
+        return 1;
+    return 0;
+}
+
+static int
+do_sign(SecretKey *sk, const char *sigfile, const char *datafile)
+{
+    FILE *stream = stdin;
+    if (datafile) {
+        stream = fopen(datafile, "r");
+        if (!stream) {
+            fprintf(stderr, "Opening file %s failed\n", datafile);
+            return 1;
+        }
+    }
+
+    char *sigfile_malloced = NULL;
+    if (!sigfile)
+        sigfile = sigfile_malloced = malloc_strcat(datafile, SIG_FILE_EXT);
+
+    const char *error_message = NULL;
+    int ret;
+
+    printf("Creating signature\n");
+    crypto_sign_state sstate;
+    if (feed_stream(&sstate, stream) != 0) {
+        error_message = "Signing failed";
+        goto err;
+    }
+
+    Signature sig;
+    if (crypto_sign_final_create(&sstate, sig.data, NULL, sk->data) != 0) {
+        error_message = "Signing failed";
+        goto err;
+    }
+
+    if (write_file(
+          sigfile, sig.data, sizeof sig.data, 0 /* default permissions */) !=
+        0) {
+        error_message = "Writing signature failed";
+        goto err;
+    }
+
+    printf("Done\n");
+    ret = 0;
+    goto out;
+
+err:;
+    if (error_message)
+        fprintf(stderr, "%s\n", error_message);
+    ret = 1;
+out:
+    sodium_memzero(sk->data, sizeof sk->data);
+    if (stream != stdin)
+        fclose(stream);
+    free(sigfile_malloced);
+    return ret;
+}
+
+static int
 mode_gen(const ProgramArgs *args, int argc, char *const *argv)
 {
     if (args->sigfile)
         return usage_error("Invalid argument: -d SIG");
-
     if (!args->pkfile)
         return usage_error("Missing argument: -p PUB");
-
     if (argc != 1)
         return usage_error("Too many arguments given");
-
-    if (check_file_ext("PUB", args->pkfile, PUB_FILE_EXT) != 0)
-        return 1;
-
-    if (check_file_ext("SEC", args->skfile, SEC_FILE_EXT) != 0)
+    if (check_file_exts(args) != 0)
         return 1;
 
     PublicKey pk;
@@ -412,63 +485,41 @@ mode_gen_sign(const ProgramArgs *args, int argc, char *const *argv)
     if (argc != 2)
         return usage_error(argc < 2 ? "Missing FILE argument"
                                     : "Too many arguments");
-
-    if (check_file_ext("SIG", args->sigfile, SIG_FILE_EXT) != 0)
+    if (check_file_exts(args) != 0)
         return 1;
-
-    const char *file = argv[1];
-    FILE *stream = fopen(file, "r");
-    if (!stream) {
-        fprintf(stderr, "Opening file %s failed\n", file);
-        return 1;
-    }
-
-    char *sigfile_malloced = NULL;
-    const char *sigfile = args->sigfile;
-    if (!sigfile)
-        sigfile = sigfile_malloced = malloc_strcat(file, SIG_FILE_EXT);
 
     PublicKey pk;
     SecretKey *sk = NULL;
-    const char *error_msg = NULL;
-    int ret =
-      generate_keypair_interactive(&pk, &sk, 0, 0 /* no require_reenter */);
-    if (ret != 0)
-        goto err;
+    if (generate_keypair_interactive(
+          &pk, &sk, args->subkeyid, 0 /* no require_reenter */) != 0)
+        return 1;
 
-    printf("Creating signature\n");
-    crypto_sign_state sstate;
-    if (feed_stream(&sstate, stream) != 0) {
-        error_msg = "Signing failed";
-        goto err;
-    }
-
-    Signature sig;
-    if (crypto_sign_final_create(&sstate, sig.data, NULL, sk->data) != 0) {
-        error_msg = "Signing failed";
-        goto err;
-    }
-
-    if (write_file(
-          sigfile, sig.data, sizeof sig.data, 0 /* default permissions */) !=
-        0) {
-        error_msg = "Writing signature failed";
-        goto err;
-    }
-
-    printf("Done\n");
-    ret = 0;
-    goto out;
-
-err:;
-    if (error_msg)
-        fprintf(stderr, "%s\n", error_msg);
-    ret = 1;
-out:;
-    fclose(stream);
-    free(sigfile_malloced);
+    int ret = do_sign(sk, args->sigfile, argv[1]);
     sodium_free(sk);
     return ret;
+}
+
+static int
+mode_sign(const ProgramArgs *args, int argc, char *const *argv)
+{
+    if (args->pkfile || args->has_subkeyid)
+        return usage_error("Invalid argument");
+    if (argc > 2)
+        return usage_error("Too many arguments");
+    if (!args->skfile)
+        return usage_error("Missing argument: -s SEC");
+    if (argc == 1 && !args->sigfile)
+        return usage_error("Missing argument");
+    if (check_file_exts(args) != 0)
+        return 1;
+
+    SecretKey sk;
+    if (read_file(args->skfile, sk.data, sizeof sk.data) != 0) {
+        fprintf(stderr, "Reading secretkey failed\n");
+        return 1;
+    }
+
+    return do_sign(&sk, args->sigfile, argv[1]);
 }
 
 static int
@@ -483,11 +534,7 @@ mode_verify(const ProgramArgs *args, int argc, char *const *argv)
     if (argc != 2 && !args->sigfile)
         return usage_error(
           "If FILE argument is not given, argument -d SIG has to be set");
-
-    if (check_file_ext("PUB", args->pkfile, PUB_FILE_EXT) != 0)
-        return 1;
-
-    if (check_file_ext("SIG", args->sigfile, SIG_FILE_EXT) != 0)
+    if (check_file_exts(args) != 0)
         return 1;
 
     const char *file = NULL;
@@ -496,8 +543,6 @@ mode_verify(const ProgramArgs *args, int argc, char *const *argv)
         file = argv[1];
         stream = fopen(file, "r");
         if (!stream) {
-            fprintf(stderr, "Opening file %s failed\n", file);
-            return 1;
         }
     }
 
@@ -541,7 +586,7 @@ err:;
         fprintf(stderr, "%s\n", error_message);
 
     printf("Good signature\n");
-    ret = 1;
+    ret = 0;
 out:
     fclose(stream);
     free(sigfile_malloced);
@@ -551,8 +596,38 @@ out:
 static int
 mode_regen_pub(const ProgramArgs *args, int argc, char *const *argv)
 {
-    fprintf(stderr, "Not yet implemented\n");
-    return 1;
+    if (!args->pkfile || !args->skfile)
+        return usage_error("Missing argument");
+    if (args->has_subkeyid || args->sigfile)
+        return usage_error("Invalid argument");
+    if (argc != 1)
+        return usage_error("Too many arguments");
+    if (check_file_exts(args) != 0)
+        return 1;
+
+    SecretKey sk;
+    if (read_file(args->skfile, sk.data, sizeof sk.data) != 0) {
+        fprintf(stderr, "Reading secretkey failed\n");
+        return 1;
+    }
+
+    PublicKey pk;
+    int ret = crypto_sign_ed25519_sk_to_pk(pk.data, sk.data);
+    sodium_memzero(sk.data, sizeof sk.data);
+    if (ret != 0) {
+        fprintf(stderr, "Recreating public key failed\n");
+        return 1;
+    }
+
+    if (write_file(
+          args->pkfile, pk.data, sizeof pk.data, 0 /* default permissions */) !=
+        0) {
+        fprintf(stderr, "Writing publickey failed\n");
+        return 1;
+    }
+
+    printf("Done\n");
+    return 0;
 }
 
 static int
@@ -595,8 +670,12 @@ parse_args(ProgramArgs *args, int *argcp, char **argv)
                         args->mode = MODE_GEN;
                     else if (strcmp(arg, "gen-sign") == 0)
                         args->mode = MODE_GEN_AND_SIGN;
+                    else if (strcmp(arg, "sign") == 0)
+                        args->mode = MODE_SIGN;
                     else if (strcmp(arg, "verify") == 0)
                         args->mode = MODE_VERIFY;
+                    else if (strcmp(arg, "regen-pub") == 0)
+                        args->mode = MODE_REGEN_PUB;
                     else
                         return usage_error("Invalid command given");
                     have_mode = 1;
@@ -652,16 +731,6 @@ main(int argc, char *argv[])
 
     ProgramArgs args = { MODE_INVALID };
     int ret = parse_args(&args, &argc, argv);
-    /* printf("has_subkeyid=%d, subkeyid=%llu, pkfile=%s, skfile=%s,
-     * sigfile=%s\n", */
-    /*        args.has_subkeyid, */
-    /*        (unsigned long long) args.subkeyid, */
-    /*        args.pkfile, */
-    /*        args.skfile, */
-    /*        args.sigfile); */
-    /* for (int i = 1; i < argc; ++i) */
-    /*     printf("arg: %s\n", argv[i]); */
-
     if (ret != 0)
         return ret;
 
@@ -673,6 +742,8 @@ main(int argc, char *argv[])
         return mode_gen(&args, argc, argv);
     case MODE_GEN_AND_SIGN:
         return mode_gen_sign(&args, argc, argv);
+    case MODE_SIGN:
+        return mode_sign(&args, argc, argv);
     case MODE_VERIFY:
         return mode_verify(&args, argc, argv);
     case MODE_REGEN_PUB:
