@@ -54,6 +54,10 @@ static const char *USAGE_STR =
   "  regen-pub -s SEC -p PUB\n"
   "    Recreate the pulickey PUB from secret key SEC\n";
 
+#define BASE64_IGNORE_CHARS " \t\r\n"
+
+#define BASE64_VARIANT sodium_base64_VARIANT_URLSAFE
+
 typedef struct
 {
     unsigned char data[crypto_sign_SECRETKEYBYTES];
@@ -295,10 +299,10 @@ out:
 }
 
 static int
-write_file(const char *dest,
-           const unsigned char *data,
-           size_t len,
-           int is_private)
+write_file_b64(const char *dest,
+               const unsigned char *data,
+               size_t len,
+               int is_private)
 {
     FILE *fd;
     if (!is_private) {
@@ -311,7 +315,11 @@ write_file(const char *dest,
     }
     if (!fd)
         return 1;
-    ssize_t n = fwrite(data, len, 1, fd);
+
+    const size_t b64_size = 1 + sodium_base64_ENCODED_LEN(len, BASE64_VARIANT);
+    char b64_data[b64_size];
+    sodium_bin2base64(b64_data, b64_size, data, len, BASE64_VARIANT);
+    ssize_t n = fwrite(b64_data, strlen(b64_data), 1, fd);
     if (n != 1)
         return 1;
     fclose(fd);
@@ -319,14 +327,27 @@ write_file(const char *dest,
 }
 
 static int
-read_file(const char *path, unsigned char *dest, size_t size)
+read_file_b64(const char *path, unsigned char *data, size_t size)
 {
     FILE *fd = fopen(path, "r");
     if (!fd)
         return 1;
-    ssize_t n = fread(dest, size, 1, fd);
+    const size_t b64_size = sodium_base64_ENCODED_LEN(size, BASE64_VARIANT);
+    char b64_data[b64_size];
+    ssize_t n = fread(b64_data, 1, b64_size, fd);
     fclose(fd);
-    return n == 1 ? 0 : 1;
+    if (n < 0)
+        return 1;
+
+    size_t decoded_len;
+    const char *end = NULL;
+    int ret = sodium_base642bin(
+      data, size, b64_data, n, NULL, &decoded_len, &end, BASE64_VARIANT);
+    sodium_memzero(b64_data, b64_size);
+
+    if (ret != 0 || decoded_len != size)
+        return 1;
+    return 0;
 }
 
 static int
@@ -415,7 +436,7 @@ do_sign(SecretKey *sk, const char *sigfile, const char *datafile)
         goto err;
     }
 
-    if (write_file(
+    if (write_file_b64(
           sigfile, sig.data, sizeof sig.data, 0 /* default permissions */) !=
         0) {
         error_message = "Writing signature failed";
@@ -457,12 +478,12 @@ mode_gen(const ProgramArgs *args, int argc, char *const *argv)
     if (ret != 0)
         return 1;
 
-    ret = write_file(
+    ret = write_file_b64(
       args->pkfile, pk.data, sizeof pk.data, 0 /* default permissions */);
     if (ret != 0)
         goto err;
     if (args->skfile) {
-        ret = write_file(
+        ret = write_file_b64(
           args->skfile, sk->data, sizeof sk->data, 1 /* private permissions */);
         if (ret != 0)
             goto err;
@@ -514,7 +535,7 @@ mode_sign(const ProgramArgs *args, int argc, char *const *argv)
         return 1;
 
     SecretKey sk;
-    if (read_file(args->skfile, sk.data, sizeof sk.data) != 0) {
+    if (read_file_b64(args->skfile, sk.data, sizeof sk.data) != 0) {
         fprintf(stderr, "Reading secretkey failed\n");
         return 1;
     }
@@ -553,13 +574,13 @@ mode_verify(const ProgramArgs *args, int argc, char *const *argv)
 
     PublicKey pk;
     const char *error_message = NULL;
-    int ret = read_file(args->pkfile, pk.data, sizeof pk.data);
+    int ret = read_file_b64(args->pkfile, pk.data, sizeof pk.data);
     if (ret != 0) {
         error_message = "Reading public key failed";
         goto err;
     }
     Signature sig;
-    ret = ret == 0 ? read_file(sigfile, sig.data, sizeof sig.data) : ret;
+    ret = ret == 0 ? read_file_b64(sigfile, sig.data, sizeof sig.data) : ret;
     if (ret != 0) {
         error_message = "Reading signature failed";
         goto err;
@@ -577,16 +598,14 @@ mode_verify(const ProgramArgs *args, int argc, char *const *argv)
         goto err;
     }
 
-    printf("Good Signature");
+    printf("Good Signature\n");
     ret = 0;
     goto out;
 
 err:;
     if (error_message)
         fprintf(stderr, "%s\n", error_message);
-
-    printf("Good signature\n");
-    ret = 0;
+    ret = 1;
 out:
     fclose(stream);
     free(sigfile_malloced);
@@ -606,7 +625,7 @@ mode_regen_pub(const ProgramArgs *args, int argc, char *const *argv)
         return 1;
 
     SecretKey sk;
-    if (read_file(args->skfile, sk.data, sizeof sk.data) != 0) {
+    if (read_file_b64(args->skfile, sk.data, sizeof sk.data) != 0) {
         fprintf(stderr, "Reading secretkey failed\n");
         return 1;
     }
@@ -619,7 +638,7 @@ mode_regen_pub(const ProgramArgs *args, int argc, char *const *argv)
         return 1;
     }
 
-    if (write_file(
+    if (write_file_b64(
           args->pkfile, pk.data, sizeof pk.data, 0 /* default permissions */) !=
         0) {
         fprintf(stderr, "Writing publickey failed\n");
