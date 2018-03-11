@@ -1,5 +1,6 @@
 .cquery_cached_index
 /build
-out.*
-out*
 compile_commands.json
+*.sig
+*.pub
+*.sec
