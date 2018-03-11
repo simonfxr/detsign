@@ -750,5 +750,5 @@ main(int argc, char *argv[])
         return mode_regen_pub(&args, argc, argv);
     }
 
-    return 0;
+    return 99;
 }
