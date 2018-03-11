@@ -76,12 +76,23 @@ typedef struct
     const char *sigfile;
 } ProgramArgs;
 
-static int
-term_disable_echo(struct termios *oldterm)
+typedef struct
 {
-    if (tcgetattr(STDIN_FILENO, oldterm) == -1)
-        return -1;
-    struct termios newterm = *oldterm;
+    struct termios old;
+    int is_term;
+} TermState;
+
+static int
+term_disable_echo(TermState *term)
+{
+    if (tcgetattr(STDIN_FILENO, &term->old) == -1) {
+        term->is_term = 0;
+        fprintf(stderr,
+                "Warning: not a terminal, reading passphrase from stdin\n");
+        return 0;
+    }
+    term->is_term = 1;
+    struct termios newterm = term->old;
     newterm.c_lflag = newterm.c_lflag & ~(ECHO | ICANON);
     newterm.c_cc[VMIN] = 1;
     newterm.c_cc[VTIME] = 0;
@@ -91,15 +102,17 @@ term_disable_echo(struct termios *oldterm)
 }
 
 static int
-term_restore(const struct termios *term)
+term_restore(const TermState *term)
 {
-    return tcsetattr(STDIN_FILENO, TCSAFLUSH, term);
+    if (!term->is_term)
+        return 0;
+    return tcsetattr(STDIN_FILENO, TCSAFLUSH, &term->old);
 }
 
 char *
 read_passphrase(int maxrepeat, int require_reenter, size_t min_len)
 {
-    struct termios term;
+    TermState term;
     if (term_disable_echo(&term) != 0)
         return NULL;
 
