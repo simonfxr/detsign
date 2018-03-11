@@ -340,9 +340,14 @@ read_file_b64(const char *path, unsigned char *data, size_t size)
         return 1;
 
     size_t decoded_len;
-    const char *end = NULL;
-    int ret = sodium_base642bin(
-      data, size, b64_data, n, NULL, &decoded_len, &end, BASE64_VARIANT);
+    int ret = sodium_base642bin(data,
+                                size,
+                                b64_data,
+                                n,
+                                BASE64_IGNORE_CHARS,
+                                &decoded_len,
+                                NULL,
+                                BASE64_VARIANT);
     sodium_memzero(b64_data, b64_size);
 
     if (ret != 0 || decoded_len != size)
