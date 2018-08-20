@@ -47,7 +47,7 @@ static const char *USAGE_STR =
   "\n"
   "  verify -p PUB [-d SIG] [FILE]\n"
   "    Verify a signature.\n"
-  "    If argument SIG is not, use FILE" SIG_FILE_EXT "\n"
+  "    If argument SIG is not set, use FILE" SIG_FILE_EXT "\n"
   "    If argument FILE is not set, read data from stdin, in which case\n"
   "    argument SIG has to be given.\n"
   "\n"
@@ -73,7 +73,8 @@ typedef struct
     unsigned char data[crypto_sign_BYTES];
 } Signature;
 
-typedef enum {
+typedef enum
+{
     MODE_INVALID = 0,
     MODE_GEN,
     MODE_GEN_AND_SIGN,
