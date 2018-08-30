@@ -3,11 +3,14 @@
 
 from conans import ConanFile, CMake, tools
 import os
+import glob
 
 
 class DetsignConan(ConanFile):
     name = "detsign"
     version = "0.0.1"
+    github_org = "simonfxr"
+    github_project = "detsign"
     description = "detsign - determinstic signing via passphrases"
     url = "https://github.com/simonfxr/detsign"
     homepage = "https://github.com/simonfxr/detsign"
@@ -42,10 +45,11 @@ class DetsignConan(ConanFile):
             del self.options.fPIC
 
     def source(self):
-        source_url = "https://github.com/simonfxr/detsign"
-        tools.get("{0}/archive/v{1}.tar.gz".format(source_url, self.version))
-        extracted_dir = self.name + "-" + self.version
-
+        prefix = "{0}-{1}".format(self.github_org, self.github_project)
+        source_url = "https://api.github.com/repos/{0}/{1}/tarball/master".format(
+            self.github_org, self.github_project)
+        tools.get(source_url, filename=prefix + ".tar.gz")
+        extracted_dir = glob.glob("{0}-*/".format(prefix))[0]
         #Rename to "source_subfolder" is a convention to simplify later steps
         os.rename(extracted_dir, self.source_subfolder)
 
