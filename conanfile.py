@@ -26,8 +26,9 @@ class DetsignConan(ConanFile):
 
     # Options may need to change depending on the packaged library.
     settings = "os", "arch", "compiler", "build_type"
-    options = {"shared": [True, False], "fPIC": [True, False]}
-    default_options = "shared=False", "fPIC=True"
+    options = {}
+    #options = {"shared": [True, False], "fPIC": [True, False]}
+    #default_options = "shared=False", "fPIC=True"
 
     exports_sources = ("CMakeLists.txt", "*.c", "*.h")
 
@@ -48,9 +49,9 @@ class DetsignConan(ConanFile):
     def configure_cmake(self):
         cmake = CMake(self)
         cmake.definitions["BUILD_TESTS"] = False  # example
-        if self.settings.os != 'Windows':
-            cmake.definitions[
-                'CMAKE_POSITION_INDEPENDENT_CODE'] = self.options.fPIC
+        # if self.settings.os != 'Windows':
+        #     cmake.definitions[
+        #         'CMAKE_POSITION_INDEPENDENT_CODE'] = self.options.fPIC
         cmake.configure(build_folder=self.build_subfolder)
         return cmake
 
