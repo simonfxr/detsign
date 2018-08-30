@@ -1,12 +1,18 @@
 
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 2.8.11)
 
-project(detsign LANGUAGES C)
+project(detsign)
 
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR} ${CMAKE_MODULE_PATH})
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(libsodium REQUIRED IMPORTED_TARGET libsodium)
+find_package(libsodium QUIET)
+if(TARGET libsodium::libsodium)
+  set(libsodium_tgt libsodium::libsodium)
+else()
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(libsodium REQUIRED IMPORTED_TARGET libsodium)
+  set(libsodium_tgt PkgConfig::libsodium)
+endif()
 
 add_executable(detsign detsign.c)
-target_link_libraries(detsign PkgConfig::libsodium)
+target_link_libraries(detsign ${libsodium_tgt})

@@ -44,8 +44,21 @@ Commands:
 
 ## Building
 
+### Using pkg-config and cmake (libsodium has to be installed)
 ```sh
-mkdir build
+mkdir -p build
+cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
-make
+cmake --build .
+```
+
+### Using conan
+
+```sh
+which conan || pip install --user conan && hash -r
+conan remote add -f bincrafters "https://api.bintray.com/conan/bincrafters/public-conan"
+mkdir -p build
+cd build
+conan install ..
+conan build ..
 ```
