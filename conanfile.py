@@ -29,7 +29,7 @@ class DetsignConan(ConanFile):
     options = {"shared": [True, False], "fPIC": [True, False]}
     default_options = "shared=False", "fPIC=True"
 
-    exports_sources = "CMakeLists.txt *.c *.h"
+    exports_sources = ("CMakeLists.txt", "*.c", "*.h")
 
     # # Custom attributes for Bincrafters recipe conventions
     # source_subfolder = "."
@@ -61,16 +61,17 @@ class DetsignConan(ConanFile):
     def package(self):
         self.copy(pattern="LICENSE", dst="licenses", src=".")
         cmake = self.configure_cmake()
-        cmake.install()
-        # If the CMakeLists.txt has a proper install method, the steps below may be redundant
-        # If so, you can just remove the lines below
-        include_folder = os.path.join(".", "include")
-        self.copy(pattern="*", dst="include", src=include_folder)
-        self.copy(pattern="*.dll", dst="bin", keep_path=False)
-        self.copy(pattern="*.lib", dst="lib", keep_path=False)
-        self.copy(pattern="*.a", dst="lib", keep_path=False)
-        self.copy(pattern="*.so*", dst="lib", keep_path=False)
-        self.copy(pattern="*.dylib", dst="lib", keep_path=False)
+        #cmake.build()
+        # # If the CMakeLists.txt has a proper install method, the steps below may be redundant
+        # # If so, you can just remove the lines below
+        # include_folder = os.path.join(".", "include")
+        self.copy(pattern="detsign", dst="bin", keep_path=False)
+        # self.copy(pattern="*", dst="include", src=include_folder)
+        # self.copy(pattern="*.dll", dst="bin", keep_path=False)
+        # self.copy(pattern="*.lib", dst="lib", keep_path=False)
+        # self.copy(pattern="*.a", dst="lib", keep_path=False)
+        # self.copy(pattern="*.so*", dst="lib", keep_path=False)
+        # self.copy(pattern="*.dylib", dst="lib", keep_path=False)
 
     def package_info(self):
         self.cpp_info.libs = tools.collect_libs(self)
