@@ -5,7 +5,7 @@ from conans import ConanFile, CMake, tools
 import os
 
 
-class LibnameConan(ConanFile):
+class DetsignConan(ConanFile):
     name = "detsign"
     version = "0.0.1"
     description = "detsign - determinstic signing via passphrases"
@@ -42,7 +42,7 @@ class LibnameConan(ConanFile):
             del self.options.fPIC
 
     def source(self):
-        source_url = "https://github.com/libauthor/libname"
+        source_url = "https://github.com/simonfxr/detsign"
         tools.get("{0}/archive/v{1}.tar.gz".format(source_url, self.version))
         extracted_dir = self.name + "-" + self.version
 
