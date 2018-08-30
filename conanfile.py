@@ -31,7 +31,7 @@ class DetsignConan(ConanFile):
     default_options = "shared=False", "fPIC=True"
 
     # Custom attributes for Bincrafters recipe conventions
-    source_subfolder = "source_subfolder"
+    source_subfolder = "."
     build_subfolder = "build_subfolder"
 
     # Use version ranges for dependencies unless there's a reason not to
@@ -45,13 +45,7 @@ class DetsignConan(ConanFile):
             del self.options.fPIC
 
     def source(self):
-        prefix = "{0}-{1}".format(self.github_org, self.github_project)
-        source_url = "https://api.github.com/repos/{0}/{1}/tarball/master".format(
-            self.github_org, self.github_project)
-        tools.get(source_url, filename=prefix + ".tar.gz")
-        extracted_dir = glob.glob("{0}-*/".format(prefix))[0]
-        #Rename to "source_subfolder" is a convention to simplify later steps
-        os.rename(extracted_dir, self.source_subfolder)
+        return
 
     def configure_cmake(self):
         cmake = CMake(self)
