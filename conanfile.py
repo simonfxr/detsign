@@ -3,7 +3,6 @@
 
 from conans import ConanFile, CMake, tools
 import os
-import glob
 
 
 class DetsignConan(ConanFile):
@@ -30,7 +29,7 @@ class DetsignConan(ConanFile):
     options = {"shared": [True, False], "fPIC": [True, False]}
     default_options = "shared=False", "fPIC=True"
 
-    exports_sources = "detsign.c"
+    exports_sources = "CMakeLists.txt *.c *.h"
 
     # # Custom attributes for Bincrafters recipe conventions
     # source_subfolder = "."
