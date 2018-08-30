@@ -30,8 +30,10 @@ class DetsignConan(ConanFile):
     options = {"shared": [True, False], "fPIC": [True, False]}
     default_options = "shared=False", "fPIC=True"
 
-    # Custom attributes for Bincrafters recipe conventions
-    source_subfolder = "."
+    exports_sources = "detsign.c"
+
+    # # Custom attributes for Bincrafters recipe conventions
+    # source_subfolder = "."
     build_subfolder = "build_subfolder"
 
     # Use version ranges for dependencies unless there's a reason not to
@@ -43,9 +45,6 @@ class DetsignConan(ConanFile):
     def config_options(self):
         if self.settings.os == 'Windows':
             del self.options.fPIC
-
-    def source(self):
-        return
 
     def configure_cmake(self):
         cmake = CMake(self)
@@ -61,12 +60,12 @@ class DetsignConan(ConanFile):
         cmake.build()
 
     def package(self):
-        self.copy(pattern="LICENSE", dst="licenses", src=self.source_subfolder)
+        self.copy(pattern="LICENSE", dst="licenses", src=".")
         cmake = self.configure_cmake()
         cmake.install()
         # If the CMakeLists.txt has a proper install method, the steps below may be redundant
         # If so, you can just remove the lines below
-        include_folder = os.path.join(self.source_subfolder, "include")
+        include_folder = os.path.join(".", "include")
         self.copy(pattern="*", dst="include", src=include_folder)
         self.copy(pattern="*.dll", dst="bin", keep_path=False)
         self.copy(pattern="*.lib", dst="lib", keep_path=False)
