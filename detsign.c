@@ -20,6 +20,14 @@
 
 #undef NDEBUG
 
+#if defined(_WIN32) || defined(WIN32)
+#define OS_WIN32
+#define VC_EXTRALEAN 1
+#define WIN32_LEAN_AND_MEAN 1
+#else
+#define OS_UNIX 1
+#endif
+
 #include <sodium.h>
 
 #include <assert.h>
@@ -27,9 +35,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef OS_WIN32
+#include <windows.h>
+#else
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
+#endif
 
 #define PUB_FILE_EXT ".detsign.pub"
 #define SEC_FILE_EXT ".detsign.sec"
@@ -49,15 +61,17 @@ static const char *USAGE_STR =
   "                hence many keypairs can be derived from the same "
   "passphrase,\n"
   "                default is 0.\n"
+  "  -v            Enable more verbose output\n"
   "\n"
   "Commands:\n"
   "  gen -p PUB [-s SEC] [-i SUBKEYID]\n"
   "    Generate a signing keypair and save to disk.\n"
   "    If argument SEC is not set, don't save the secret key.\n"
   "\n"
-  "  gen-sign [-d SIG] [-i SUBKEYID] FILE\n"
+  "  gen-sign [-p PUB] [-d SIG] [-i SUBKEYID] FILE\n"
   "    Generate the keypair on the fly using a passphrase and sign FILE.\n"
   "    If argument SIG is not set, save to FILE" SIG_FILE_EXT ".\n"
+  "    If argument PUB is set, verify that it matches the generated one.\n"
   "\n"
   "  sign -s SEC [-d SIG] [FILE]\n"
   "    Sign FILE and save signature to SIG.\n"
@@ -106,6 +120,7 @@ typedef enum
 typedef struct
 {
     ProgramMode mode;
+    int verbose;
     int has_subkeyid;
     uint64_t subkeyid;
     const char *pkfile;
@@ -113,78 +128,139 @@ typedef struct
     const char *sigfile;
 } ProgramArgs;
 
+#ifdef OS_WIN32
+typedef struct
+{
+    HANDLE stdin;
+    DWORD mode;
+} TermState;
+#else
 typedef struct
 {
     struct termios old;
-    int is_term;
+    int reset_old;
 } TermState;
+#endif
 
 static int
-term_disable_echo(TermState *term)
+term_disable_echo(TermState *term, int *is_term)
 {
-    if (tcgetattr(STDIN_FILENO, &term->old) == -1) {
-        term->is_term = 0;
-        fprintf(stderr,
-                "Warning: not a terminal, reading passphrase from stdin\n");
+    assert(is_term && "is_term cannot be NULL");
+    *is_term = 0;
+#ifdef OS_WIN32
+    term->stdin = INVALID_HANDLE_VALUE;
+    HANDLE stdinh = GetStdinHandle(STD_INPUT_HANDLE);
+    if (stdinh == INVALID_HANDLE_VALUE)
+        return -1;
+    if (!GetConsoleMode(stdinh, &term->mode))
         return 0;
-    }
-    term->is_term = 1;
+    *is_term = 1;
+    DWORD newmode = mode & ~(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT);
+    if (!SetConsoleMode(stdinh, newmode))
+        return -1;
+    term->stdin = stdinh;
+    return 0;
+#else
+    term->reset_old = 0;
+    if (tcgetattr(STDIN_FILENO, &term->old) == -1)
+        return 0;
+    *is_term = 1;
     struct termios newterm = term->old;
     newterm.c_lflag = newterm.c_lflag & ~(ECHO | ICANON);
     newterm.c_cc[VMIN] = 1;
     newterm.c_cc[VTIME] = 0;
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &newterm) == -1)
         return -1;
+    term->reset_old = 1;
     return 0;
+#endif
 }
 
 static int
 term_restore(const TermState *term)
 {
-    if (!term->is_term)
+#ifdef OS_WIN32
+    if (term->stdin == INVALID_HANDLE_VALUE)
+        return 0;
+    if (!SetConsoleMode(term->stdin, term->mode))
+        return -1;
+    return 0;
+#else
+    if (!term->reset_old)
         return 0;
     return tcsetattr(STDIN_FILENO, TCSAFLUSH, &term->old);
+#endif
 }
 
 char *
 read_passphrase(int maxrepeat, int require_reenter, size_t min_len)
 {
     TermState term;
-    if (term_disable_echo(&term) != 0)
+    int is_term = 0;
+    if (term_disable_echo(&term, &is_term) != 0)
         return NULL;
+
+    if (require_reenter && !is_term)
+        require_reenter = 0;
 
     const size_t bufsize = 4000;
     char *pw[2] = { NULL, NULL };
     pw[0] = sodium_malloc(bufsize);
-    if (require_reenter)
-        pw[1] = sodium_malloc(bufsize);
-    if (!pw[0] || (require_reenter && !pw[1]))
+    if (!pw[0])
         return NULL;
+    if (require_reenter) {
+        pw[1] = sodium_malloc(bufsize);
+        if (!pw[1]) {
+            sodium_free(pw[0]);
+            return NULL;
+        }
+    }
 
     int match = 0;
     int is_eof = 0;
     for (int try = 0; try < maxrepeat && !is_eof; ++try) {
         for (int i = 0; i < (require_reenter ? 2 : 1); ++i) {
-            printf("%s passphrase: ", i == 0 ? "Enter" : "Reenter");
+            if (is_term)
+                printf("%s passphrase: ", i == 0 ? "Enter" : "Reenter");
+            else
+                fprintf(
+                  stderr,
+                  "Warning: not a terminal, reading passphrase from stdin\n");
             fflush(stdout);
             int ch;
             size_t pos = 0;
-            while (pos < bufsize) {
-                switch ((ch = fgetc(stdin))) {
-                case EOF:
-                case 0x4: // <Ctrl-d>
+            if (!is_term) {
+                // read passphrase from stdin
+                if (fgets(pw[i], bufsize, stdin) == NULL) {
                     is_eof = 1;
-                    goto out;
-                case 0x7f: // <backspace>
-                    if (pos > 0)
-                        --pos;
-                    break;
-                case '\n':
-                    printf("\n");
-                    goto out;
-                default:
-                    pw[i][pos++] = ch;
-                    break;
+                    // pos == 0
+                } else {
+                    is_eof = feof(stdin);
+                    char *end = &pw[i][strlen(pw[i])];
+                    while (end != pw[i] && (end[-1] == '\r' || end[-1] == '\n'))
+                        --end;
+                    *end = '\0';
+                    pos = end - pw[i];
+                }
+            } else {
+                // read interactive passphrase
+                while (pos < bufsize) {
+                    switch ((ch = fgetc(stdin))) {
+                    case EOF:
+                    case 0x4: // <Ctrl-d>
+                        is_eof = 1;
+                        goto out;
+                    case 0x7f: // <backspace>
+                        if (pos > 0)
+                            --pos;
+                        break;
+                    case '\n':
+                        printf("\n");
+                        goto out;
+                    default:
+                        pw[i][pos++] = ch;
+                        break;
+                    }
                 }
             }
         out:;
@@ -280,7 +356,8 @@ static int
 generate_keypair_interactive(PublicKey *pk,
                              SecretKey **sk,
                              uint64_t subkeyid,
-                             int require_reenter)
+                             int require_reenter,
+                             int verbose)
 {
     assert(sk != NULL);
     *sk = NULL;
@@ -297,13 +374,15 @@ generate_keypair_interactive(PublicKey *pk,
         goto err;
     }
 
-    printf("Generating keypair\n");
+    if (verbose)
+        printf("Generating keypair\n");
     ret = generate_keypair(pk, *sk, subkeyid, passphrase);
     if (ret != 0) {
         error_msg = "Generating keypair failed";
         goto err;
     }
-    printf("Done\n");
+    if (verbose)
+        printf("Done\n");
     ret = 0;
     goto out;
 err:
@@ -431,7 +510,7 @@ check_file_exts(const ProgramArgs *args)
 }
 
 static int
-do_sign(SecretKey *sk, const char *sigfile, const char *datafile)
+do_sign(SecretKey *sk, const char *sigfile, const char *datafile, int verbose)
 {
     FILE *stream = stdin;
     if (datafile) {
@@ -449,7 +528,8 @@ do_sign(SecretKey *sk, const char *sigfile, const char *datafile)
     const char *error_message = NULL;
     int ret;
 
-    printf("Creating signature\n");
+    if (verbose)
+        printf("Creating signature\n");
     crypto_sign_state sstate;
     if (feed_stream(&sstate, stream) != 0) {
         error_message = "Signing failed";
@@ -469,7 +549,8 @@ do_sign(SecretKey *sk, const char *sigfile, const char *datafile)
         goto err;
     }
 
-    printf("Done\n");
+    if (verbose)
+        printf("Done\n");
     ret = 0;
     goto out;
 
@@ -500,7 +581,7 @@ mode_gen(const ProgramArgs *args, int argc, char *const *argv)
     PublicKey pk;
     SecretKey *sk;
     int ret = generate_keypair_interactive(
-      &pk, &sk, args->subkeyid, 1 /* require_reenter */);
+      &pk, &sk, args->subkeyid, 1 /* require_reenter */, args->verbose);
     if (ret != 0)
         return 1;
 
@@ -515,11 +596,12 @@ mode_gen(const ProgramArgs *args, int argc, char *const *argv)
             goto err;
     }
 
-    printf("Keypair generated and saved\n");
+    if (args->verbose)
+        printf("Keypair generated and saved\n");
     sodium_free(sk);
     return 0;
 err:
-    fprintf(stderr, "Error writing keyfiles\n");
+    fprintf(stderr, "Error: writing keyfiles\n");
     sodium_free(sk);
     return 1;
 }
@@ -527,7 +609,7 @@ err:
 static int
 mode_gen_sign(const ProgramArgs *args, int argc, char *const *argv)
 {
-    if (args->pkfile || args->skfile)
+    if (args->skfile)
         return usage_error("Invalid arguments");
     if (argc != 2)
         return usage_error(argc < 2 ? "Missing FILE argument"
@@ -535,13 +617,34 @@ mode_gen_sign(const ProgramArgs *args, int argc, char *const *argv)
     if (check_file_exts(args) != 0)
         return 1;
 
+    PublicKey oldpk;
+    if (args->pkfile) {
+        if (read_file_b64(args->pkfile, oldpk.data, sizeof oldpk.data) != 0) {
+            fprintf(stderr, "Error: reading existing public key failed\n");
+            return 1;
+        }
+    }
+
     PublicKey pk;
     SecretKey *sk = NULL;
-    if (generate_keypair_interactive(
-          &pk, &sk, args->subkeyid, 0 /* no require_reenter */) != 0)
+    if (generate_keypair_interactive(&pk,
+                                     &sk,
+                                     args->subkeyid,
+                                     0 /* no require_reenter */,
+                                     args->verbose) != 0)
         return 1;
 
-    int ret = do_sign(sk, args->sigfile, argv[1]);
+    if (args->pkfile) {
+        if (sodium_memcmp(oldpk.data, pk.data, sizeof pk.data) != 0) {
+            fprintf(
+              stderr,
+              "Error: public keys don't match, wrong passphrase/subkeyid?\n");
+            sodium_free(sk);
+            return 1;
+        }
+    }
+
+    int ret = do_sign(sk, args->sigfile, argv[1], args->verbose);
     sodium_free(sk);
     return ret;
 }
@@ -566,7 +669,7 @@ mode_sign(const ProgramArgs *args, int argc, char *const *argv)
         return 1;
     }
 
-    return do_sign(&sk, args->sigfile, argv[1]);
+    return do_sign(&sk, args->sigfile, argv[1], args->verbose);
 }
 
 static int
@@ -584,12 +687,14 @@ mode_verify(const ProgramArgs *args, int argc, char *const *argv)
     if (check_file_exts(args) != 0)
         return 1;
 
-    const char *file = NULL;
+    const char *file = "<stdin>";
     FILE *stream = stdin;
     if (argc == 2) {
         file = argv[1];
         stream = fopen(file, "r");
         if (!stream) {
+            fprintf(stderr, "Error: opening %s failed\n", file);
+            return 1;
         }
     }
 
@@ -620,11 +725,11 @@ mode_verify(const ProgramArgs *args, int argc, char *const *argv)
     }
 
     if (crypto_sign_final_verify(&sstate, sig.data, pk.data) != 0) {
-        error_message = "Bad Signature!";
+        printf("%s: Bad Signature", file);
+        error_message = NULL;
         goto err;
     }
-
-    printf("Good Signature\n");
+    printf("%s: Good Signature\n", file);
     ret = 0;
     goto out;
 
@@ -671,7 +776,8 @@ mode_regen_pub(const ProgramArgs *args, int argc, char *const *argv)
         return 1;
     }
 
-    printf("Done\n");
+    if (args->verbose)
+        printf("Done\n");
     return 0;
 }
 
@@ -705,6 +811,9 @@ parse_args(ProgramArgs *args, int *argcp, char **argv)
                 case 'd':
                 case 'i':
                     optch = arg[1];
+                    break;
+                case 'v':
+                    args->verbose = 1;
                     break;
                 default:
                     return usage_error("Invalid option in arguments");
