@@ -48,3 +48,4 @@ tmp/
 .pydevproject
 .settings/*
 .ropeproject/*
+external/

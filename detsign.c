@@ -32,15 +32,30 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #ifdef OS_WIN32
 #include <windows.h>
+#ifdef _MSC_VER
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+static inline void *
+check_void_ptr_(void *x)
+{
+    return x;
+}
+#define VOIDPTR_CAST(T, ex) ((T) check_void_ptr_(ex))
+#endif
 #else
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
+#endif
+
+#ifndef VOIDPTR_CAST
+#define VOIDPTR_CAST(T, ex) (ex)
 #endif
 
 #define PUB_FILE_EXT ".detsign.pub"
@@ -131,7 +146,7 @@ typedef struct
 #ifdef OS_WIN32
 typedef struct
 {
-    HANDLE stdin;
+    HANDLE stdinh;
     DWORD mode;
 } TermState;
 #else
@@ -148,17 +163,17 @@ term_disable_echo(TermState *term, int *is_term)
     assert(is_term && "is_term cannot be NULL");
     *is_term = 0;
 #ifdef OS_WIN32
-    term->stdin = INVALID_HANDLE_VALUE;
-    HANDLE stdinh = GetStdinHandle(STD_INPUT_HANDLE);
+    term->stdinh = INVALID_HANDLE_VALUE;
+    HANDLE stdinh = GetStdHandle(STD_INPUT_HANDLE);
     if (stdinh == INVALID_HANDLE_VALUE)
         return -1;
     if (!GetConsoleMode(stdinh, &term->mode))
         return 0;
     *is_term = 1;
-    DWORD newmode = mode & ~(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT);
+    DWORD newmode = term->mode & ~(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT);
     if (!SetConsoleMode(stdinh, newmode))
         return -1;
-    term->stdin = stdinh;
+    term->stdinh = stdinh;
     return 0;
 #else
     term->reset_old = 0;
@@ -180,9 +195,9 @@ static int
 term_restore(const TermState *term)
 {
 #ifdef OS_WIN32
-    if (term->stdin == INVALID_HANDLE_VALUE)
+    if (term->stdinh == INVALID_HANDLE_VALUE)
         return 0;
-    if (!SetConsoleMode(term->stdin, term->mode))
+    if (!SetConsoleMode(term->stdinh, term->mode))
         return -1;
     return 0;
 #else
@@ -205,20 +220,22 @@ read_passphrase(int maxrepeat, int require_reenter, size_t min_len)
 
     const size_t bufsize = 4000;
     char *pw[2] = { NULL, NULL };
-    pw[0] = sodium_malloc(bufsize);
+    pw[0] = VOIDPTR_CAST(char *, sodium_malloc(bufsize));
     if (!pw[0])
         return NULL;
     if (require_reenter) {
-        pw[1] = sodium_malloc(bufsize);
+        pw[1] = VOIDPTR_CAST(char *, sodium_malloc(bufsize));
         if (!pw[1]) {
             sodium_free(pw[0]);
             return NULL;
         }
     }
 
+    printf("IS_TERM: %d\n", is_term);
+
     int match = 0;
     int is_eof = 0;
-    for (int try = 0; try < maxrepeat && !is_eof; ++try) {
+    for (int trial = 0; trial < maxrepeat && !is_eof; ++trial) {
         for (int i = 0; i < (require_reenter ? 2 : 1); ++i) {
             if (is_term)
                 printf("%s passphrase: ", i == 0 ? "Enter" : "Reenter");
@@ -245,7 +262,8 @@ read_passphrase(int maxrepeat, int require_reenter, size_t min_len)
             } else {
                 // read interactive passphrase
                 while (pos < bufsize) {
-                    switch ((ch = fgetc(stdin))) {
+                    ch = fgetc(stdin);
+                    switch (ch) {
                     case EOF:
                     case 0x4: // <Ctrl-d>
                         is_eof = 1;
@@ -309,7 +327,7 @@ malloc_strcat(const char *a, const char *b)
     assert(b && "b cannot be NULL");
     size_t len1 = strlen(a);
     size_t len2 = strlen(b);
-    char *buf = malloc(len1 + len2 + 1);
+    char *buf = VOIDPTR_CAST(char *, malloc(len1 + len2 + 1));
     strcpy(buf, a);
     strcat(buf, b);
     return buf;
@@ -368,7 +386,7 @@ generate_keypair_interactive(PublicKey *pk,
         fprintf(stderr, "Reading passphrase failed\n");
         return 1;
     }
-    *sk = sodium_malloc(sizeof **sk);
+    *sk = VOIDPTR_CAST(SecretKey *, sodium_malloc(sizeof **sk));
     if (!*sk) {
         error_msg = "Error";
         goto err;
@@ -408,10 +426,12 @@ write_file_b64(const char *dest,
     if (!is_private) {
         fd = fopen(dest, "w");
     } else {
+#ifndef OS_WIN32
         int fdnum = open(dest, O_CREAT | O_WRONLY, 0600);
-        if (fdnum == -1)
-            return 1;
-        fd = fdopen(fdnum, "w");
+        fd = fdnum != -1 ? fdopen(fdnum, "w") : NULL;
+#else
+        fd = fopen(dest, "w");
+#endif
     }
     if (!fd)
         return 1;

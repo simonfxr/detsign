@@ -1,0 +1,4 @@
+build-configs:
+  - debug-clang-make
+  - release-clang-make
+  - release-gcc-make
