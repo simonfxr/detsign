@@ -38,6 +38,7 @@
 
 #ifdef OS_WIN32
 #include <windows.h>
+#include <conio.h>
 #ifdef _MSC_VER
 #include <BaseTsd.h>
 typedef SSIZE_T ssize_t;
@@ -262,7 +263,11 @@ read_passphrase(int maxrepeat, int require_reenter, size_t min_len)
             } else {
                 // read interactive passphrase
                 while (pos < bufsize) {
-                    ch = fgetc(stdin);
+                    #ifdef OS_WIN32
+                        ch = _getch();
+                    #else
+                        ch = fgetc(stdin);
+                    #endif
                     switch (ch) {
                     case EOF:
                     case 0x4: // <Ctrl-d>
@@ -273,6 +278,7 @@ read_passphrase(int maxrepeat, int require_reenter, size_t min_len)
                             --pos;
                         break;
                     case '\n':
+                    case '\r':
                         printf("\n");
                         goto out;
                     default:
@@ -437,9 +443,11 @@ write_file_b64(const char *dest,
         return 1;
 
     const size_t b64_size = 1 + sodium_base64_ENCODED_LEN(len, BASE64_VARIANT);
-    char b64_data[b64_size];
+    char *b64_data = VOIDPTR_CAST(char *, malloc(b64_size));
     sodium_bin2base64(b64_data, b64_size, data, len, BASE64_VARIANT);
     ssize_t n = fwrite(b64_data, strlen(b64_data), 1, fd);
+    sodium_memzero(b64_data, b64_size);
+    free(b64_data);
     if (n != 1)
         return 1;
     fclose(fd);
@@ -453,8 +461,10 @@ read_file_b64(const char *path, unsigned char *data, size_t size)
     if (!fd)
         return 1;
     const size_t b64_size = sodium_base64_ENCODED_LEN(size, BASE64_VARIANT);
-    char b64_data[b64_size];
+    char *b64_data = VOIDPTR_CAST(char *, malloc(b64_size));
     ssize_t n = fread(b64_data, 1, b64_size, fd);
+    sodium_memzero(b64_data, b64_size);
+    free(b64_data);
     fclose(fd);
     if (n < 0)
         return 1;

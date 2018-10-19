@@ -52,6 +52,10 @@ endif()
 
 add_executable(detsign detsign.c)
 target_link_libraries(detsign ${libsodium_tgt})
+if(CMAKE_C_COMPILER_ID MATCHES "MSVC")
+    target_compile_definitions(detsign PRIVATE
+        _CRT_SECURE_NO_WARNINGS=1)
+endif()
 
 # if(CLANG_TIDY_EXE)
 #   set_target_properties(detsign PROPERTIES
