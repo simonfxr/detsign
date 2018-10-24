@@ -37,8 +37,8 @@
 #include <string.h>
 
 #ifdef OS_WIN32
-#include <windows.h>
 #include <conio.h>
+#include <windows.h>
 #ifdef _MSC_VER
 #include <BaseTsd.h>
 typedef SSIZE_T ssize_t;
@@ -232,8 +232,6 @@ read_passphrase(int maxrepeat, int require_reenter, size_t min_len)
         }
     }
 
-    printf("IS_TERM: %d\n", is_term);
-
     int match = 0;
     int is_eof = 0;
     for (int trial = 0; trial < maxrepeat && !is_eof; ++trial) {
@@ -263,11 +261,11 @@ read_passphrase(int maxrepeat, int require_reenter, size_t min_len)
             } else {
                 // read interactive passphrase
                 while (pos < bufsize) {
-                    #ifdef OS_WIN32
-                        ch = _getch();
-                    #else
-                        ch = fgetc(stdin);
-                    #endif
+#ifdef OS_WIN32
+                    ch = _getch();
+#else
+                    ch = fgetc(stdin);
+#endif
                     switch (ch) {
                     case EOF:
                     case 0x4: // <Ctrl-d>
