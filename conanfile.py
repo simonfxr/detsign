@@ -13,7 +13,7 @@ class DetsignConan(ConanFile):
     description = "detsign - determinstic signing via passphrases"
     url = "https://github.com/simonfxr/detsign"
     homepage = "https://github.com/simonfxr/detsign"
-    author = "Simon Reiser <simonfxr@gmail.com>"
+    author = "Simon Reiser <me@sfxr.de>"
     # Indicates License type of the packaged library
     license = "GPL2"
 
