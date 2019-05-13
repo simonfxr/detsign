@@ -78,6 +78,10 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
   list(APPEND cflags "/W3")
 endif()
 
+if(CMAKE_C_COMPILER_ID MATCHES "Intel")
+  list(APPEND cflags -diag-disable=11074,11076)
+endif()
+
 add_executable(detsign detsign.c)
 target_link_libraries(detsign ${libsodium_tgt} header-utils::header-utils)
 target_compile_options(detsign PRIVATE ${cflags})

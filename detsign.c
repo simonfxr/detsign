@@ -109,8 +109,14 @@ test_not_null(const void *p)
     return p != NULL;
 }
 
-#define assert_nonnull(p, msg) assert(test_not_null(p) && msg)
-#ifdef HU_COMP_INTEL_P
+#define assert_msg(e, msg)                                                     \
+    HU_PRAGMA_INTEL(warning push)                                              \
+    HU_PRAGMA_INTEL(warning disable 279)                                       \
+    assert(e &&msg) HU_PRAGMA_INTEL(warning pop)
+
+#define assert_nonnull(p, msg) assert_msg(test_not_null(p), msg)
+
+#if HU_COMP_INTEL_P && 0
 #    define assert_unreachable()                                               \
         (fprintf(stderr,                                                       \
                  "ERROR: assumed unreachable (at %s:%d)\n",                    \
@@ -118,7 +124,7 @@ test_not_null(const void *p)
                  __LINE__),                                                    \
          abort())
 #else
-#    define assert_unreachable() assert(0 && "ERROR: assumed unreachable")
+#    define assert_unreachable() assert_msg(false, "ERROR: assumed unreachable")
 #endif
 
 typedef struct
@@ -451,7 +457,7 @@ write_file_b64(HU_IN_NONNULL const char *dest,
     if (!is_private) {
         fd = fopen(dest, "w");
     } else {
-#ifndef OS_WIN32
+#if OS_POSIX_P
         int fdnum = open(dest, O_CREAT | O_WRONLY, 0600);
         fd = fdnum != -1 ? fdopen(fdnum, "w") : NULL;
 #else
@@ -871,9 +877,9 @@ parse_args(HU_OUT_NONNULL ProgramArgs *args,
            HU_INOUT_NONNULL int *argcp,
            HU_INOUT_NONNULL char **argv)
 {
-    assert(argcp);
-    assert(args);
-    assert(argv);
+    assert_nonnull(args, "args cannot be NULL");
+    assert_nonnull(argcp, "argcp cannot be NULL");
+    assert_nonnull(argv, "argv cannot be NULL");
 
     memset(args, 0, sizeof *args);
     args->mode = MODE_INVALID;
