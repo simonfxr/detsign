@@ -127,6 +127,21 @@ test_not_null(const void *p)
 #    define assert_unreachable() assert_msg(false, "ERROR: assumed unreachable")
 #endif
 
+#if HU_COMP_INTEL_P
+#    define EXHAUSTIVE_SWITCH()                                                \
+    default:                                                                   \
+        assert_unreachable()
+#else
+#    define EXHAUSTIVE_SWITCH HU_NOOP
+#endif
+
+#ifdef crypto_kdf_KEYBYTES
+#    define HAVE_SODIUM_KDF 1
+#else
+/* old version of sodium */
+#    define crypto_kdf_KEYBYTES 32
+#endif
+
 typedef struct
 {
     uint8_t data[crypto_sign_SECRETKEYBYTES];
@@ -155,27 +170,24 @@ typedef enum
 typedef struct
 {
     ProgramMode mode;
-    bool verbose;
-    bool has_subkeyid;
     uint64_t subkeyid;
     const char *pkfile;
     const char *skfile;
     const char *sigfile;
+    bool verbose : 1;
+    bool has_subkeyid : 1;
 } ProgramArgs;
 
-#if HU_OS_WINDOWS_P
 typedef struct
 {
+#if HU_OS_WINDOWS_P
     HANDLE stdinh;
     DWORD mode;
-} TermState;
 #elif HU_OS_POSIX_P
-typedef struct
-{
     struct termios old;
-    int reset_old;
-} TermState;
+    bool reset_old;
 #endif
+} TermState;
 
 HU_NONNULL_PARAMS(1, 2)
 static int
@@ -197,7 +209,7 @@ term_disable_echo(HU_INOUT_NONNULL TermState *term,
     term->stdinh = stdinh;
     return 0;
 #elif HU_OS_POSIX_P
-    term->reset_old = 0;
+    term->reset_old = false;
     if (tcgetattr(STDIN_FILENO, &term->old) == -1)
         return 0;
     *is_term = true;
@@ -207,7 +219,7 @@ term_disable_echo(HU_INOUT_NONNULL TermState *term,
     newterm.c_cc[VTIME] = 0;
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &newterm) == -1)
         return -1;
-    term->reset_old = 1;
+    term->reset_old = true;
     return 0;
 #endif
 }
@@ -229,8 +241,63 @@ term_restore(HU_IN_NONNULL const TermState *term)
 #endif
 }
 
+HU_NONNULL_PARAMS(1, 3)
+static size_t
+read_passphrase1(HU_OUT_NONNULL char *pw,
+                 size_t bufsize,
+                 HU_OUT_NONNULL bool *is_eof,
+                 bool is_term)
+{
+    *is_eof = false;
+    fflush(stdout);
+    int ch;
+    size_t pos = 0;
+    if (!is_term) {
+        // read passphrase from stdin
+        if (fgets(pw, bufsize, stdin) == NULL) {
+            *is_eof = true;
+            // pos == 0
+        } else {
+            *is_eof = feof(stdin) != 0;
+            char *end = &pw[strlen(pw)];
+            while (end != pw && (end[-1] == '\r' || end[-1] == '\n'))
+                --end;
+            *end = '\0';
+            pos = end - pw;
+        }
+    } else {
+        // read interactive passphrase
+        while (pos < bufsize) {
+#if HU_OS_WINDOWS_P
+            ch = _getch();
+#else
+            ch = fgetc(stdin);
+#endif
+            switch (ch) {
+            case EOF:
+            case 0x4: // <Ctrl-d>
+                *is_eof = true;
+                goto out;
+            case 0x7f: // <backspace>
+                if (pos > 0)
+                    --pos;
+                break;
+            case '\n':
+            case '\r':
+                puts("");
+                goto out;
+            default:
+                pw[pos++] = (char) ch;
+                break;
+            }
+        }
+    }
+out:;
+    return pos;
+}
+
 HU_RETURNS_NOALIAS
-char *
+static char *
 read_passphrase(int maxrepeat, bool require_reenter, size_t min_len)
 {
     TermState term;
@@ -264,75 +331,34 @@ read_passphrase(int maxrepeat, bool require_reenter, size_t min_len)
                 fprintf(
                   stderr,
                   "Warning: not a terminal, reading passphrase from stdin\n");
-            fflush(stdout);
-            int ch;
-            size_t pos = 0;
-            if (!is_term) {
-                // read passphrase from stdin
-                if (fgets(pw[i], bufsize, stdin) == NULL) {
-                    is_eof = true;
-                    // pos == 0
-                } else {
-                    is_eof = !!feof(stdin);
-                    char *end = &pw[i][strlen(pw[i])];
-                    while (end != pw[i] && (end[-1] == '\r' || end[-1] == '\n'))
-                        --end;
-                    *end = '\0';
-                    pos = end - pw[i];
-                }
-            } else {
-                // read interactive passphrase
-                while (pos < bufsize) {
-#if HU_OS_WINDOWS_P
-                    ch = _getch();
-#else
-                    ch = fgetc(stdin);
-#endif
-                    switch (ch) {
-                    case EOF:
-                    case 0x4: // <Ctrl-d>
-                        is_eof = true;
-                        goto out;
-                    case 0x7f: // <backspace>
-                        if (pos > 0)
-                            --pos;
-                        break;
-                    case '\n':
-                    case '\r':
-                        printf("\n");
-                        goto out;
-                    default:
-                        pw[i][pos++] = ch;
-                        break;
-                    }
-                }
-            }
-        out:;
+            size_t len = read_passphrase1(pw[i], bufsize, &is_eof, is_term);
+
             if (is_eof && i == 0 && require_reenter) {
                 fprintf(stderr, "\nPremature end of input\n");
                 goto ret;
             }
-            if (pos == bufsize) {
+            if (len == bufsize) {
                 fprintf(stderr, "\nPassphrase too long\n");
                 goto repeat;
             }
-            pw[i][pos] = '\0';
-            if (i == 0 && pos == 0) {
+            pw[i][len] = '\0';
+            if (i == 0 && len == 0) {
                 fprintf(stderr, "Empty passphrase forbidden\n");
                 goto repeat;
-            } else if (i == 0 && pos < min_len) {
+            } else if (i == 0 && len < min_len) {
                 fprintf(stderr,
                         "Passphrase too short, minimum length: %zu\n",
                         min_len);
                 goto repeat;
             }
         }
-        if (require_reenter && strcmp(pw[0], pw[1]) != 0) {
-            fprintf(stderr, "Passphrases dont match\n");
-        } else {
+
+        if (!require_reenter || strcmp(pw[0], pw[1]) == 0) {
             match = true;
-            break;
+            goto ret;
         }
+
+        fprintf(stderr, "Passphrases dont match\n");
     repeat:;
     }
 
@@ -457,7 +483,7 @@ write_file_b64(HU_IN_NONNULL const char *dest,
     if (!is_private) {
         fd = fopen(dest, "w");
     } else {
-#if OS_POSIX_P
+#if HU_OS_POSIX_P && defined(_POSIX_C_SOURCE)
         int fdnum = open(dest, O_CREAT | O_WRONLY, 0600);
         fd = fdnum != -1 ? fdopen(fdnum, "w") : NULL;
 #else
@@ -472,6 +498,7 @@ write_file_b64(HU_IN_NONNULL const char *dest,
     sodium_bin2base64(b64_data, b64_size, data, len, BASE64_VARIANT);
     ssize_t n = fwrite(b64_data, strlen(b64_data), 1, fd);
     sodium_memzero(b64_data, b64_size);
+
     free(b64_data);
     fclose(fd);
     if (n != 1)
@@ -486,31 +513,32 @@ read_file_b64(HU_IN_NONNULL const char *path,
               size_t size)
 {
     FILE *fd = fopen(path, "r");
+    int ret = 1;
     if (!fd)
         return 1;
     const size_t b64_size = sodium_base64_ENCODED_LEN(size, BASE64_VARIANT);
     char *b64_data = hu_cxx_static_cast(char *, malloc(b64_size));
     ssize_t n = fread(b64_data, 1, b64_size, fd);
-    sodium_memzero(b64_data, b64_size);
-    free(b64_data);
-    fclose(fd);
     if (n < 0)
-        return 1;
+        goto out;
+    fclose(fd);
 
     size_t decoded_len;
-    int ret = sodium_base642bin(data,
-                                size,
-                                b64_data,
-                                n,
-                                BASE64_IGNORE_CHARS,
-                                &decoded_len,
-                                NULL,
-                                BASE64_VARIANT);
-    sodium_memzero(b64_data, b64_size);
+    ret = sodium_base642bin(data,
+                            size,
+                            b64_data,
+                            n,
+                            BASE64_IGNORE_CHARS,
+                            &decoded_len,
+                            NULL,
+                            BASE64_VARIANT);
 
-    if (ret != 0 || decoded_len != size)
-        return 1;
-    return 0;
+    if (ret == 0 && decoded_len != size)
+        ret = 1;
+out:
+    free(b64_data);
+    sodium_memzero(b64_data, b64_size);
+    return ret;
 }
 
 HU_NONNULL_PARAMS(1, 2)
@@ -536,9 +564,7 @@ HU_NONNULL_PARAMS(1)
 static int
 usage_error(HU_IN_NONNULL const char *error_msg)
 {
-    fprintf(stderr, "%s\n", error_msg);
-    fprintf(stderr, "\n");
-    fprintf(stderr, "%s", USAGE_STR);
+    fprintf(stderr, "%s\n\n%s", error_msg, USAGE_STR);
     return 2;
 }
 
@@ -814,6 +840,7 @@ mode_verify(HU_IN_NONNULL const ProgramArgs *args,
         error_message = NULL;
         goto err;
     }
+
     printf("%s: Good Signature\n", file);
     ret = 0;
     goto out;
@@ -997,6 +1024,7 @@ main(int argc, char *argv[])
         return mode_verify(&args, argc, argv);
     case MODE_REGEN_PUB:
         return mode_regen_pub(&args, argc, argv);
+        EXHAUSTIVE_SWITCH();
     }
 
     return 99;

@@ -1,5 +1,5 @@
 build-configs:
-  - debug-clang-make
-  - release-clang-make
-  - release-gcc-make
-  - release-intel-make
+  - relwithdebinfo-clang-ninja
+  - release-clang-ninja
+  - release-gcc-ninja
+  - release-intel-ninja
