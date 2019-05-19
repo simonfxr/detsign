@@ -10,11 +10,12 @@ matrix:
             - sourceline: 'deb https://apt.kitware.com/ubuntu/ xenial main'
               key_url: 'https://apt.kitware.com/keys/kitware-archive-latest.asc'
           packages:
-            - g++-4.9
+            - gcc-7
+            - g++-7
             - python3.6-dev
             - cmake
             - pkg-config
-      env: CC=gcc-4.9 CXX=g++-4.9 BUILD_TYPE=Release
+      env: CC=gcc-7 CXX=g++-7 BUILD_TYPE=Release
 
 script:
   - mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} .. && cmake --build . && ctest -VV
