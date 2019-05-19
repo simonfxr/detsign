@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.5)
 
 option(HUNTER_STATUS_DEBUG "Enable Hunter debug output" True)
-set(HUNTER_CONFIGURATION_TYPES Release CACHE STRING)
-option(HUNTER_BUILD_SHARED_LIBS "Build Hunter package shared libs" True)
+#set(HUNTER_CONFIGURATION_TYPES Release CACHE STRING)
+#option(HUNTER_BUILD_SHARED_LIBS "Build Hunter package shared libs" True)
 
 include("cmake/HunterGate.cmake")
 
@@ -11,14 +11,14 @@ set(CMAKE_C_STANDARD 99)
 huntergate(URL
            "https://github.com/ruslo/hunter/archive/v0.23.171.tar.gz"
            SHA1
-           "5d68bcca78eee347239ca5f4d34f4b6c12683154")
+           "5d68bcca78eee347239ca5f4d34f4b6c12683154"
+           LOCAL)
 
 project(detsign LANGUAGES C CXX)
 
 include("${CMAKE_SOURCE_DIR}/cmake/cmake-utils/cmake-utils.cmake")
-cmu_configure()
 
-find_package(PkgConfig REQUIRED)
+find_package(PkgConfig QUIET)
 
 if(PkgConfig_FOUND)
   if(CMAKE_VERSION VERSION_GREATER 3.7)
@@ -52,6 +52,8 @@ add_subdirectory(deps/cxx-header-utils)
 if(CMU_COMP_MSVC)
   list(APPEND CMU_DEFINES _CRT_SECURE_NO_WARNINGS=1)
 endif()
+
+cmu_configure()
 
 cmu_add_executable(detsign
                    SOURCES
