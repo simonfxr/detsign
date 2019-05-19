@@ -41,7 +41,10 @@ def detsign_run(
     if stdin is not None:
         run_args["input"] = stdin.encode("utf-8")
     ret = subprocess.run(
-        [DETSIGN_BIN] + list(args), capture_output=True, **run_args
+        [DETSIGN_BIN] + list(args),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        **run_args,
     )
     failure_msg = None
     stdout_str = ret.stdout.decode("utf-8")
@@ -100,8 +103,8 @@ def run_tests():
         CURRENT_TEST_NUM = 1 + i
         try:
             test()
-        except:
-            print("FAILED", file=sys.stderr)
+        except Exception as e:
+            print("FAILED: " + str(e), file=sys.stderr)
             nfailed += 1
     if nfailed == 0:
         print("ALL TESTS SUCCESSFUL")

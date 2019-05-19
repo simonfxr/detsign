@@ -2,14 +2,14 @@ cmake_minimum_required(VERSION 3.5)
 
 include("cmake/HunterGate.cmake")
 
+set(CMAKE_C_STANDARD 99)
+
 huntergate(URL
            "https://github.com/ruslo/hunter/archive/v0.23.171.tar.gz"
            SHA1
            "5d68bcca78eee347239ca5f4d34f4b6c12683154")
 
 project(detsign LANGUAGES C CXX)
-
-set(CMAKE_C_STANDARD 99)
 
 include("${CMAKE_SOURCE_DIR}/cmake/cmake-utils/cmake-utils.cmake")
 cmu_configure()
