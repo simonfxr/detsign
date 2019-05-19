@@ -1,4 +1,8 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
+
+option(HUNTER_STATUS_DEBUG "Enable Hunter debug output" True)
+set(HUNTER_CONFIGURATION_TYPES Release CACHE STRING)
+option(HUNTER_BUILD_SHARED_LIBS "Build Hunter package shared libs" True)
 
 include("cmake/HunterGate.cmake")
 
