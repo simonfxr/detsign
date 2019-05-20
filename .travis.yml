@@ -15,6 +15,8 @@ matrix:
       env: CM_CC=gcc-7 CM_CXX=g++-7 CM_BUILD_TYPE=Release
 
 script:
-  - cmake -H. -Bbuild -DCMAKE_C_COMPILER=${CM_CC} -DCMAKE_CXX_COMPILER=${CM_CXX} -DCMAKE_BUILD_TYPE=${CM_BUILD_TYPE}
+  - ( mkdir bin && cd bin && ln -s $(which $CM_CC) cc && ln -s $(which $CM_CC) gcc && ln -s $(which $CM_CXX) c++ && ln -s $(which $CM_CXX) g++ )
+  - export PATH="$PWD/bin:$PATH"
+  - cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${CM_BUILD_TYPE}
   - cmake --build build
   - cd build && ctest -VV
