@@ -5,4 +5,4 @@ build_script:
   - ps: mkdir build; cd build; cmake -DCMAKE_BUILD_TYPE=Release ..; cmake --build .
 
 test_script:
-  - ps: cd build; ctest -VV
+  - ps: ctest -VV

@@ -16,7 +16,7 @@ huntergate(URL
 
 project(detsign LANGUAGES C CXX)
 
-#include("${CMAKE_SOURCE_DIR}/cmake/cmake-utils/cmake-utils.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/cmake-utils/cmake-utils.cmake")
 
 # find_package(PkgConfig QUIET)
 
