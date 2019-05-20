@@ -18,28 +18,28 @@ project(detsign LANGUAGES C CXX)
 
 include("${CMAKE_SOURCE_DIR}/cmake/cmake-utils/cmake-utils.cmake")
 
-# find_package(PkgConfig QUIET)
+find_package(PkgConfig QUIET)
 
-# if(PkgConfig_FOUND)
-#   if(CMAKE_VERSION VERSION_GREATER 3.7)
-#     pkg_check_modules(libsodium
-#                       QUIET
-#                       IMPORTED_TARGET
-#                       libsodium>=1.0.12)
-#     if(TARGET PkgConfig::libsodium)
-#       set(libsodium_tgt PkgConfig::libsodium)
-#     endif()
-#   else()
-#     pkg_check_modules(SODIUM QUIET libsodium>=1.0.12)
-#     if(SODIUM_FOUND)
-#       add_library(libsodium INTERFACE)
-#       target_link_libraries(libsodium INTERFACE ${SODIUM_LIBRARIES})
-#       target_include_directories(libsodium INTERFACE ${SODIUM_INCLUDE_DIRS})
-#       target_compile_options(libsodium INTERFACE ${SODIUM_CFLAGS})
-#       set(libsodium_tgt libsodium)
-#     endif()
-#   endif()
-# endif()
+if(PkgConfig_FOUND)
+  if(CMAKE_VERSION VERSION_GREATER 3.7)
+    pkg_check_modules(libsodium
+                      QUIET
+                      IMPORTED_TARGET
+                      libsodium>=1.0.12)
+    if(TARGET PkgConfig::libsodium)
+      set(libsodium_tgt PkgConfig::libsodium)
+    endif()
+  else()
+    pkg_check_modules(SODIUM QUIET libsodium>=1.0.12)
+    if(SODIUM_FOUND)
+      add_library(libsodium INTERFACE)
+      target_link_libraries(libsodium INTERFACE ${SODIUM_LIBRARIES})
+      target_include_directories(libsodium INTERFACE ${SODIUM_INCLUDE_DIRS})
+      target_compile_options(libsodium INTERFACE ${SODIUM_CFLAGS})
+      set(libsodium_tgt libsodium)
+    endif()
+  endif()
+endif()
 
 if(NOT libsodium_tgt)
   hunter_add_package(libsodium)
@@ -61,9 +61,6 @@ cmu_add_executable(detsign
                    DEPEND
                    ${libsodium_tgt}
                    header-utils::header-utils)
-
-# add_executable(detsign detsign.c)
-# target_link_libraries(detsign ${libsodium_tgt} header-utils::header-utils)
 
 find_package(PythonInterp 3.6 QUIET)
 
