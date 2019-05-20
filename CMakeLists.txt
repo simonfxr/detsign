@@ -49,9 +49,9 @@ endif()
 
 add_subdirectory(deps/cxx-header-utils)
 
-# if(CMU_COMP_MSVC)
-#   list(APPEND CMU_DEFINES _CRT_SECURE_NO_WARNINGS=1)
-# endif()
+if(CMU_COMP_MSVC)
+  list(APPEND CMU_DEFINES _CRT_SECURE_NO_WARNINGS=1)
+endif()
 
 cmu_configure()
 
