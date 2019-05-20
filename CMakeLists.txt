@@ -53,7 +53,7 @@ add_subdirectory(deps/cxx-header-utils)
 #   list(APPEND CMU_DEFINES _CRT_SECURE_NO_WARNINGS=1)
 # endif()
 
-# cmu_configure()
+cmu_configure()
 
 # cmu_add_executable(detsign
 #                    SOURCES
