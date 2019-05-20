@@ -10,7 +10,7 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
           packages:
-            g++-7
+            - g++-7
       env: CC=gcc-7 CXX=g++-7 BUILD_TYPE=Release
     - os: linux
       dist: xenial
@@ -19,7 +19,7 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
           packages:
-            g++-8
+            - g++-8
       env: CC=gcc-8 CXX=g++-8 BUILD_TYPE=Release
     - os: linux
       dist: xenial
@@ -28,7 +28,7 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
           packages:
-            g++-6
+            - g++-6
       env: CC=gcc-6 CXX=g++-6 BUILD_TYPE=Release
     - os: osx
       osx_image: xcode10.2
@@ -36,6 +36,6 @@ matrix:
       env: CC=clang CXX=clang++ BUILD_TYPE=Release
 
 script:
-  - cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+  - cmake -H. -Bbuild -DCMAKE_C_COMPILER=${CC} -DCMAKE_CXX_COMPILER=${CXX} -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
   - cmake --build build
   - cd build && ctest -VV
