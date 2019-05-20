@@ -55,15 +55,15 @@ add_subdirectory(deps/cxx-header-utils)
 
 cmu_configure()
 
-# cmu_add_executable(detsign
-#                    SOURCES
-#                    detsign.c
-#                    DEPEND
-#                    ${libsodium_tgt}
-#                    header-utils::header-utils)
+cmu_add_executable(detsign
+                   SOURCES
+                   detsign.c
+                   DEPEND
+                   ${libsodium_tgt}
+                   header-utils::header-utils)
 
-add_executable(detsign detsign.c)
-target_link_libraries(detsign ${libsodium_tgt} header-utils::header-utils)
+# add_executable(detsign detsign.c)
+# target_link_libraries(detsign ${libsodium_tgt} header-utils::header-utils)
 
 find_package(PythonInterp 3.6 QUIET)
 
