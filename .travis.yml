@@ -5,18 +5,9 @@ matrix:
   include:
     - os: linux
       dist: xenial
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages:
-            - gcc-7
-            - g++-7
-      env: CM_CC=gcc-7 CM_CXX=g++-7 CM_BUILD_TYPE=Release
+      env: CC=gcc CXX=g++ BUILD_TYPE=Release
 
 script:
-  - ( mkdir bin && cd bin && ln -s $(which $CM_CC) cc && ln -s $(which $CM_CC) gcc && ln -s $(which $CM_CXX) c++ && ln -s $(which $CM_CXX) g++ )
-  - export PATH="$PWD/bin:$PATH"
-  - cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${CM_BUILD_TYPE}
+  - cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
   - cmake --build build
   - cd build && ctest -VV
